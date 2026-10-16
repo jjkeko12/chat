@@ -12,7 +12,8 @@ async function init() {
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
-  ctx = { webpush, db: createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY) };
+  // .origin recorta cualquier cosa extra que se haya pegado (/rest/v1, diagonales, etc.)
+  ctx = { webpush, db: createClient(new URL(process.env.SUPABASE_URL).origin, process.env.SUPABASE_SERVICE_KEY) };
   return ctx;
 }
 
