@@ -32,7 +32,7 @@
   #menu h2 { font-size: .9rem; margin: 0; }
   #menu input { flex: none; width: 100%; font-size: .9rem; }
   #menu hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 4px 0; }
-  #menumsg { font-size: .8rem; color: var(--muted); min-height: 1em; }
+  #menumsg, #pushmsg { font-size: .8rem; color: var(--muted); min-height: 1em; }
   #msgs { background-size: cover; background-position: center; }
   .hasbg .meta, .hasbg .sys { background: var(--panel); padding: 1px 8px; border-radius: 8px; width: fit-content; }
   .hasbg .msg.mine .meta { margin-left: auto; }
@@ -95,6 +95,10 @@
       <div id="menumsg"></div>
       <button id="memBtn" type="button" class="sec onlyNarrow">Ver miembros</button>
       <hr />
+      <h2>Notificaciones</h2>
+      <button id="pushBtn" type="button" class="sec">🔔 Activar notificaciones</button>
+      <div id="pushmsg"></div>
+      <hr />
       <button id="logout" class="sec" type="button">Salir</button>
     </div>
   </header>
@@ -108,10 +112,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-  // ---------- CONFIGURACIÓN: rellena estos 3 valores ----------
+  // ---------- CONFIGURACIÓN: rellena estos 4 valores ----------
   const SUPABASE_URL = 'https://rjyhgwijofiepieltrra.supabase.co/rest/v1/';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqeWhnd2lqb2ZpZXBpZWx0cnJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMTA3NzksImV4cCI6MjEwNzY4Njc3OX0.bfHO5ewx11znaeWtTm74Q2vQYopl2HqQsYQPSmYGeYM';
-  const ROOM = 'chat-1-2-3';
+  const ROOM = 'amigos-:D';
+  const VAPID_PUBLIC_KEY = 'BBRpjXlbPcH3ReqdeQFXCnem7jzwzPh6xM_K8yPc8IEwk49RQexYcBqWqz4sbRqdH260jNQVdgFn5F1DQ-MgzUE'; // clave pública VAPID (la privada va solo en Vercel)
   // ------------------------------------------------------------
 
   // .origin recorta cualquier cosa extra que se haya pegado (/rest/v1, diagonales, etc.)
@@ -171,6 +176,11 @@
 
   $('logout').addEventListener('click', async () => {
     if (channel) await db.removeChannel(channel);
+    try {
+      const r = pushOk && await navigator.serviceWorker.getRegistration();
+      const sb = r && await r.pushManager.getSubscription();
+      if (sb) await db.rpc('borrar_suscripcion', { p_endpoint: sb.endpoint });
+    } catch (e) {}
     await db.auth.signOut();
     location.reload();
   });
@@ -235,6 +245,61 @@
   }
   $('memBtn').addEventListener('click', () => { $('members').classList.toggle('open'); $('menu').hidden = true; });
   $('chat').addEventListener('click', () => $('members').classList.remove('open'));
+
+  // ----- Notificaciones push -----
+  const pushOk = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+  function b64ToBytes(b64) {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+  async function getSub() {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    return { reg, sub: await reg.pushManager.getSubscription() };
+  }
+  async function savePush(sub) {
+    const j = sub.toJSON();
+    const { error } = await db.rpc('guardar_suscripcion',
+      { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+    return !error;
+  }
+  async function refreshPushUi() {
+    const btn = $('pushBtn'), msg = $('pushmsg');
+    if (!pushOk) { btn.hidden = true; msg.textContent = 'Este navegador no admite notificaciones.'; return; }
+    if (Notification.permission === 'denied') {
+      btn.hidden = true;
+      msg.textContent = 'Las notificaciones están bloqueadas: actívalas en los permisos del sitio (candado junto a la dirección).';
+      return;
+    }
+    btn.hidden = false;
+    let sub = null;
+    try { sub = (await getSub()).sub; } catch (e) {}
+    const on = Notification.permission === 'granted' && !!sub;
+    btn.textContent = on ? '🔕 Desactivar notificaciones' : '🔔 Activar notificaciones';
+    btn.dataset.on = on ? '1' : '';
+    msg.textContent = on ? 'Activadas en este dispositivo.' : '';
+    if (on && me) savePush(sub); // vincula este dispositivo a la cuenta que está abierta
+  }
+  $('pushBtn').addEventListener('click', async () => {
+    const msg = $('pushmsg');
+    try {
+      if ($('pushBtn').dataset.on) {
+        const { sub } = await getSub();
+        if (sub) { await db.rpc('borrar_suscripcion', { p_endpoint: sub.endpoint }); await sub.unsubscribe(); }
+        return refreshPushUi();
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { msg.textContent = 'No se concedió el permiso.'; return refreshPushUi(); }
+      const { reg, sub: old } = await getSub();
+      const sub = old || await reg.pushManager.subscribe({
+        userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC_KEY)
+      });
+      if (!(await savePush(sub))) { msg.textContent = 'No se pudo guardar la suscripción.'; return; }
+      refreshPushUi();
+    } catch (e) { msg.textContent = 'Error: ' + e.message; }
+  });
 
   function local(t) {
     const d = document.createElement('div');
@@ -392,6 +457,7 @@
       });
 
     loadMembers();
+    refreshPushUi();
     const { data, error } = await db.from('messages').select('*')
       .eq('room', ROOM).order('created_at', { ascending: false }).limit(100);
     if (error) { $('status').textContent = 'Error: ' + error.message; return; }
