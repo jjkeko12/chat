@@ -11,7 +11,7 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100dvh; max-width: 720px; margin: 0 auto; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100dvh; max-width: 960px; margin: 0 auto; }
   [hidden] { display: none !important; }
   header { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   header h1 { font-size: 1.1rem; margin: 0; }
@@ -25,6 +25,29 @@
   .msg.mine .body { background: var(--mine); color: var(--mine-text); }
   .sys { align-self: center; font-size: .8rem; color: var(--muted); text-align: center; max-width: 90%; }
   .msg.me .body { background: none; font-style: italic; padding: 0 4px; color: var(--muted); }
+  header { position: relative; }
+  .bars { background: none; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
+  .bars span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; }
+  #menu { position: absolute; right: 12px; top: 100%; z-index: 10; width: min(300px, 92vw); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  #menu h2 { font-size: .9rem; margin: 0; }
+  #menu input { flex: none; width: 100%; font-size: .9rem; }
+  #menu hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 4px 0; }
+  #menumsg { font-size: .8rem; color: var(--muted); min-height: 1em; }
+  #msgs { background-size: cover; background-position: center; }
+  .hasbg .meta, .hasbg .sys { background: var(--panel); padding: 1px 8px; border-radius: 8px; width: fit-content; }
+  .hasbg .msg.mine .meta { margin-left: auto; }
+  #app { position: relative; }
+  #members { width: 170px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; }
+  #members h3 { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+  #memberList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #memberList li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #chat { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .onlyNarrow { display: none; }
+  @media (max-width: 600px) {
+    #members { display: none; position: absolute; left: 0; top: 0; bottom: 0; z-index: 9; box-shadow: 4px 0 16px rgba(0,0,0,.3); }
+    #members.open { display: block; }
+    .onlyNarrow { display: block; }
+  }
   form { display: flex; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); }
   input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 1rem; }
   button { padding: 10px 18px; border: none; border-radius: 10px; background: var(--mine); color: var(--mine-text); font-size: 1rem; cursor: pointer; }
@@ -42,9 +65,9 @@
 <div id="auth" hidden>
   <h1>💬 Chat de amigos</h1>
   <form id="authform">
-    <input id="email" type="email" placeholder="Correo" autocomplete="email" required />
+    <input id="ident" maxlength="60" placeholder="Tu nombre" autocomplete="username" required />
     <input id="pass" type="password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="current-password" minlength="6" required />
-    <input id="uname" maxlength="30" placeholder="Tu nombre (solo para crear cuenta)" />
+    <input id="email" type="email" placeholder="Correo (solo para crear la cuenta; puede ser inventado)" autocomplete="email" hidden />
     <div class="row">
       <button type="submit" id="btnLogin">Entrar</button>
       <button type="button" id="btnSignup" class="sec">Crear cuenta</button>
@@ -53,20 +76,34 @@
   </form>
 </div>
 
-<div id="app" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+<div id="app" hidden style="display:flex;flex-direction:row;flex:1;min-height:0">
+  <aside id="members"><h3 id="memTitle">Miembros</h3><ul id="memberList"></ul></aside>
+  <div id="chat">
   <header>
     <div>
       <h1>💬 Chat de amigos</h1>
       <div id="online"></div>
       <div id="status">Conectando…</div>
     </div>
-    <button id="logout" class="sec" type="button">Salir</button>
+    <button id="menuBtn" class="bars" type="button" aria-label="Menú"><span></span><span></span><span></span></button>
+    <div id="menu" hidden>
+      <h2>Fondo del chat</h2>
+      <input id="bgUrl" type="text" placeholder="https://… (enlace de una imagen)" />
+      <button id="bgApply" type="button">Usar este enlace</button>
+      <input id="bgFile" type="file" accept="image/*" />
+      <button id="bgClear" type="button" class="sec">Quitar fondo</button>
+      <div id="menumsg"></div>
+      <button id="memBtn" type="button" class="sec onlyNarrow">Ver miembros</button>
+      <hr />
+      <button id="logout" class="sec" type="button">Salir</button>
+    </div>
   </header>
   <div id="msgs"></div>
   <form id="form">
     <input id="input" maxlength="500" placeholder="Escribe un mensaje…" autocomplete="off" />
     <button type="submit">Enviar</button>
   </form>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -74,7 +111,7 @@
   // ---------- CONFIGURACIÓN: rellena estos 3 valores ----------
   const SUPABASE_URL = 'https://rjyhgwijofiepieltrra.supabase.co/rest/v1/';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqeWhnd2lqb2ZpZXBpZWx0cnJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMTA3NzksImV4cCI6MjEwNzY4Njc3OX0.bfHO5ewx11znaeWtTm74Q2vQYopl2HqQsYQPSmYGeYM';
-  const ROOM = 'amigos-1-2-3';
+  const ROOM = 'chat-1-2-3';
   // ------------------------------------------------------------
 
   // .origin recorta cualquier cosa extra que se haya pegado (/rest/v1, diagonales, etc.)
@@ -96,18 +133,36 @@
 
   $('authform').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const ident = $('ident').value.trim();
+    let email = ident;
     authMsg('Entrando…');
-    const { data, error } = await db.auth.signInWithPassword({ email: $('email').value.trim(), password: $('pass').value });
+    if (!ident.includes('@')) {
+      const { data: mail } = await db.rpc('email_por_nombre', { p_nombre: ident });
+      if (!mail) return authMsg('Nombre o contraseña incorrectos.');
+      email = mail;
+    }
+    const { data, error } = await db.auth.signInWithPassword({ email, password: $('pass').value });
     if (error) return authMsg(friendly(error));
     start(data.user);
   });
 
   $('btnSignup').addEventListener('click', async () => {
-    const name = $('uname').value.trim();
-    if (!name) return authMsg('Escribe tu nombre para crear la cuenta.');
+    const name = $('ident').value.trim();
+    if (!name) return authMsg('Escribe el nombre que quieres usar.');
+    if (name.includes('@')) return authMsg('El nombre no puede llevar @.');
+    if (name.length > 30) return authMsg('El nombre puede tener máximo 30 letras.');
+    if ($('email').hidden) {
+      $('email').hidden = false;
+      return authMsg('Escribe un correo (puede ser inventado) y pulsa "Crear cuenta" otra vez.');
+    }
+    const email = $('email').value.trim();
+    if (!email) return authMsg('Falta el correo.');
+    if ($('pass').value.length < 6) return authMsg('La contraseña debe tener al menos 6 caracteres.');
     authMsg('Creando cuenta…');
+    const { data: libre } = await db.rpc('nombre_disponible', { p_nombre: name });
+    if (libre === false) return authMsg('Ese nombre ya está en uso. Elige otro.');
     const { data, error } = await db.auth.signUp({
-      email: $('email').value.trim(), password: $('pass').value, options: { data: { name } }
+      email, password: $('pass').value, options: { data: { name } }
     });
     if (error) return authMsg(friendly(error));
     if (!data.session) return authMsg('Cuenta creada. Revisa tu correo para confirmarla y luego pulsa "Entrar".');
@@ -119,6 +174,67 @@
     await db.auth.signOut();
     location.reload();
   });
+
+  // ----- Menú y fondo (el fondo se guarda solo en este navegador) -----
+  function applyBg(src) {
+    $('msgs').style.backgroundImage = src ? 'url("' + src.replace(/["\\\n\r]/g, '') + '")' : '';
+    document.body.classList.toggle('hasbg', !!src);
+  }
+  function saveBg(src) {
+    try {
+      if (src) localStorage.setItem('chat_bg', src); else localStorage.removeItem('chat_bg');
+      return true;
+    } catch (e) { return false; }
+  }
+  function menuMsg(t) { $('menumsg').textContent = t; }
+
+  $('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); $('menu').hidden = !$('menu').hidden; });
+  $('menu').addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => { $('menu').hidden = true; });
+
+  $('bgApply').addEventListener('click', () => {
+    const u = $('bgUrl').value.trim();
+    if (!/^https:\/\//i.test(u)) return menuMsg('El enlace debe empezar con https://');
+    applyBg(u); saveBg(u); menuMsg('Fondo aplicado.');
+  });
+
+  $('bgFile').addEventListener('change', () => {
+    const f = $('bgFile').files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const data = c.toDataURL('image/jpeg', 0.8);
+      URL.revokeObjectURL(img.src);
+      applyBg(data);
+      menuMsg(saveBg(data) ? 'Fondo aplicado.' : 'Fondo aplicado, pero pesa demasiado para guardarlo: se perderá al recargar.');
+    };
+    img.onerror = () => menuMsg('No se pudo leer esa imagen.');
+    img.src = URL.createObjectURL(f);
+  });
+
+  $('bgClear').addEventListener('click', () => {
+    applyBg(''); saveBg(''); $('bgUrl').value = ''; $('bgFile').value = ''; menuMsg('Fondo quitado.');
+  });
+  try { applyBg(localStorage.getItem('chat_bg') || ''); } catch (e) {}
+
+  async function loadMembers() {
+    const { data, error } = await db.from('profiles').select('name');
+    if (error || !data) return;
+    data.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    $('memberList').replaceChildren(...data.map((p) => {
+      const li = document.createElement('li');
+      li.textContent = p.name;
+      return li;
+    }));
+    $('memTitle').textContent = 'Miembros — ' + data.length;
+  }
+  $('memBtn').addEventListener('click', () => { $('members').classList.toggle('open'); $('menu').hidden = true; });
+  $('chat').addEventListener('click', () => $('members').classList.remove('open'));
 
   function local(t) {
     const d = document.createElement('div');
@@ -159,7 +275,7 @@
     $('msgs').scrollTop = $('msgs').scrollHeight;
   }
 
-  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/nick <nombre> – cambia tu nombre\n/me <acción> – mensaje de acción\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita';
+  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/me <acción> – mensaje de acción\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/nick <nuevo> – cambia tu nombre\n/nick <actual> > <nuevo> – cambia el nombre de otra persona\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita';
 
   async function send(body, kind) {
     const row = { room: ROOM, author: myName, body };
@@ -192,9 +308,20 @@
     if (cmd === 'help') return local(AYUDA);
     if (cmd === 'clear') { $('msgs').innerHTML = ''; return; }
     if (cmd === 'nick') {
-      if (!arg) return local('Uso: /nick <nuevo nombre>');
-      const n = await rpc('cmd_nick', { p_nombre: arg });
-      if (n) { myName = n; if (channel) channel.track({ name: myName }); local('✅ Ahora te llamas ' + n + '.'); }
+      if (!arg) return local('Uso: /nick <nuevo nombre>  o  /nick <nombre actual> > <nuevo nombre>');
+      let actual = myName, nuevo = arg;
+      if (arg.includes('>')) {
+        const i = arg.indexOf('>');
+        actual = arg.slice(0, i).trim();
+        nuevo = arg.slice(i + 1).trim();
+      }
+      if (!actual || !nuevo) return local('Uso: /nick <nombre actual> > <nuevo nombre>');
+      const self = actual.toLowerCase() === myName.toLowerCase();
+      const old = myName;
+      if (self) myName = nuevo.slice(0, 30);
+      const n = await rpc('cmd_nick', { p_actual: actual, p_nuevo: nuevo, p_room: ROOM });
+      if (n && self && channel) channel.track({ name: myName });
+      else if (!n && self) myName = old;
       return;
     }
     if (cmd === 'me') {
@@ -245,6 +372,16 @@
       .on('postgres_changes',
           { event: 'DELETE', schema: 'public', table: 'messages' },
           (p) => { const el = els.get(p.old.id); if (el) { el.remove(); els.delete(p.old.id); } })
+      .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: 'user_id=eq.' + me.id },
+          (p) => {
+            if (p.new.name && p.new.name !== myName) {
+              myName = p.new.name;
+              channel.track({ name: myName });
+              local('✏️ Un administrador cambió tu nombre a ' + myName + '.');
+            }
+          })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadMembers())
       .on('presence', { event: 'sync' }, () => {
         const names = Object.values(channel.presenceState()).map((v) => v[0].name);
         $('online').textContent = 'En línea (' + names.length + '): ' + names.join(', ');
@@ -254,6 +391,7 @@
         else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') { $('status').textContent = 'Reconectando…'; }
       });
 
+    loadMembers();
     const { data, error } = await db.from('messages').select('*')
       .eq('room', ROOM).order('created_at', { ascending: false }).limit(100);
     if (error) { $('status').textContent = 'Error: ' + error.message; return; }
