@@ -23,6 +23,8 @@
   .msg.mine .meta { text-align: right; }
   .body { background: var(--other); padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.mine .body { background: var(--mine); color: var(--mine-text); }
+  .sys { align-self: center; font-size: .8rem; color: var(--muted); text-align: center; max-width: 90%; }
+  .msg.me .body { background: none; font-style: italic; padding: 0 4px; color: var(--muted); }
   form { display: flex; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); }
   input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 1rem; }
   button { padding: 10px 18px; border: none; border-radius: 10px; background: var(--mine); color: var(--mine-text); font-size: 1rem; cursor: pointer; }
@@ -72,7 +74,7 @@
   // ---------- CONFIGURACIÓN: rellena estos 3 valores ----------
   const SUPABASE_URL = 'https://rjyhgwijofiepieltrra.supabase.co/rest/v1/';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqeWhnd2lqb2ZpZXBpZWx0cnJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMTA3NzksImV4cCI6MjEwNzY4Njc3OX0.bfHO5ewx11znaeWtTm74Q2vQYopl2HqQsYQPSmYGeYM';
-  const ROOM = 'cambia-este-codigo-de-sala';
+  const ROOM = 'amigos-1-2-3';
   // ------------------------------------------------------------
 
   // .origin recorta cualquier cosa extra que se haya pegado (/rest/v1, diagonales, etc.)
@@ -80,6 +82,7 @@
   const $ = (id) => document.getElementById(id);
   let channel = null, me = null, myName = '';
   const seen = new Set();
+  const els = new Map();
 
   function authMsg(t) { $('authmsg').textContent = t; }
   function friendly(err) {
@@ -117,31 +120,120 @@
     location.reload();
   });
 
+  function local(t) {
+    const d = document.createElement('div');
+    d.className = 'sys';
+    d.style.whiteSpace = 'pre-wrap';
+    d.textContent = t;
+    $('msgs').append(d);
+    $('msgs').scrollTop = $('msgs').scrollHeight;
+  }
+
   function add(m) {
     if (seen.has(m.id)) return;
     seen.add(m.id);
-    const mine = m.user_id ? m.user_id === me.id : m.author === myName;
     const wrap = document.createElement('div');
-    wrap.className = 'msg' + (mine ? ' mine' : '');
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    meta.textContent = (mine ? 'Tú' : m.author) + ' · ' +
-      new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const body = document.createElement('div');
-    body.className = 'body';
-    body.textContent = m.body;
-    wrap.append(meta, body);
+    if (m.kind === 'system') {
+      wrap.className = 'sys';
+      wrap.textContent = m.body;
+    } else if (m.kind === 'me') {
+      wrap.className = 'msg me';
+      const b = document.createElement('div');
+      b.className = 'body';
+      b.textContent = '* ' + m.author + ' ' + m.body;
+      wrap.append(b);
+    } else {
+      const mine = m.user_id ? m.user_id === me.id : m.author === myName;
+      wrap.className = 'msg' + (mine ? ' mine' : '');
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = (mine ? 'Tú' : m.author) + ' · ' +
+        new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const body = document.createElement('div');
+      body.className = 'body';
+      body.textContent = m.body;
+      wrap.append(meta, body);
+    }
+    els.set(m.id, wrap);
     $('msgs').append(wrap);
     $('msgs').scrollTop = $('msgs').scrollHeight;
   }
 
+  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/nick <nombre> – cambia tu nombre\n/me <acción> – mensaje de acción\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita';
+
+  async function send(body, kind) {
+    const row = { room: ROOM, author: myName, body };
+    if (kind) row.kind = kind;
+    const { data, error } = await db.from('messages').insert(row).select().single();
+    if (error) {
+      if (/row-level security/i.test(error.message)) {
+        const { data: p } = await db.from('profiles').select('muted_until').eq('user_id', me.id).maybeSingle();
+        if (p && p.muted_until && new Date(p.muted_until) > new Date()) {
+          local('🔇 Estás silenciado hasta las ' +
+            new Date(p.muted_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
+        } else local('⚠️ No tienes permiso para enviar este mensaje.');
+      } else local('⚠️ No se pudo enviar: ' + error.message);
+      return false;
+    }
+    add(data);
+    return true;
+  }
+
+  async function runCommand(text) {
+    const parts = text.slice(1).trim().split(/\s+/);
+    const cmd = (parts.shift() || '').toLowerCase();
+    const arg = parts.join(' ');
+    const rpc = async (fn, args) => {
+      const { data, error } = await db.rpc(fn, args);
+      if (error) { local('⚠️ ' + error.message); return null; }
+      return data;
+    };
+
+    if (cmd === 'help') return local(AYUDA);
+    if (cmd === 'clear') { $('msgs').innerHTML = ''; return; }
+    if (cmd === 'nick') {
+      if (!arg) return local('Uso: /nick <nuevo nombre>');
+      const n = await rpc('cmd_nick', { p_nombre: arg });
+      if (n) { myName = n; if (channel) channel.track({ name: myName }); local('✅ Ahora te llamas ' + n + '.'); }
+      return;
+    }
+    if (cmd === 'me') {
+      if (!arg) return local('Uso: /me <acción>');
+      await send(arg, 'me');
+      return;
+    }
+    if (cmd === 'mute') {
+      const p = arg.split(' ');
+      let mins = 10;
+      if (p.length > 1 && /^\d+$/.test(p[p.length - 1])) mins = parseInt(p.pop(), 10);
+      const name = p.join(' ').trim();
+      if (!name) return local('Uso: /mute <nombre> [minutos]');
+      await rpc('cmd_mute', { p_nombre: name, p_minutos: mins, p_room: ROOM });
+      return;
+    }
+    if (cmd === 'unmute') {
+      if (!arg) return local('Uso: /unmute <nombre>');
+      await rpc('cmd_unmute', { p_nombre: arg, p_room: ROOM });
+      return;
+    }
+    if (cmd === 'delete') {
+      const n = parseInt(arg, 10);
+      if (!/^\d+$/.test(arg) || n < 1 || n > 100) return local('Uso: /delete <número de 1 a 100>');
+      await rpc('cmd_delete', { p_n: n, p_room: ROOM });
+      return;
+    }
+    if (cmd === 'admin' || cmd === 'unadmin') {
+      if (!arg) return local('Uso: /' + cmd + ' <nombre>');
+      await rpc('cmd_admin', { p_nombre: arg, p_dar: cmd === 'admin', p_room: ROOM });
+      return;
+    }
+    local('Comando desconocido. Escribe /help para ver la lista.');
+  }
+
   async function start(user) {
     me = user;
-    myName = (user.user_metadata && user.user_metadata.name) || '';
-    if (!myName) {
-      myName = (prompt('¿Cómo te llamas? (máx. 30 letras)') || '').trim().slice(0, 30) || 'Anónimo';
-      await db.auth.updateUser({ data: { name: myName } });
-    }
+    const { data: prof } = await db.from('profiles').select('name').eq('user_id', user.id).maybeSingle();
+    myName = (prof && prof.name) || (user.user_metadata && user.user_metadata.name) || (user.email || 'Anónimo').split('@')[0];
     $('auth').hidden = true;
     $('app').hidden = false;
 
@@ -150,6 +242,9 @@
       .on('postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + ROOM },
           (p) => add(p.new))
+      .on('postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'messages' },
+          (p) => { const el = els.get(p.old.id); if (el) { el.remove(); els.delete(p.old.id); } })
       .on('presence', { event: 'sync' }, () => {
         const names = Object.values(channel.presenceState()).map((v) => v[0].name);
         $('online').textContent = 'En línea (' + names.length + '): ' + names.join(', ');
@@ -163,6 +258,7 @@
       .eq('room', ROOM).order('created_at', { ascending: false }).limit(100);
     if (error) { $('status').textContent = 'Error: ' + error.message; return; }
     data.reverse().forEach(add);
+    local('Escribe /help para ver los comandos.');
   }
 
   $('form').addEventListener('submit', async (e) => {
@@ -170,10 +266,8 @@
     const body = $('input').value.trim();
     if (!body) return;
     $('input').value = '';
-    const { data, error } = await db.from('messages')
-      .insert({ room: ROOM, author: myName, body }).select().single();
-    if (error) { $('status').textContent = 'No se pudo enviar: ' + error.message; $('input').value = body; return; }
-    add(data);
+    if (body.startsWith('/')) return runCommand(body);
+    if (!(await send(body))) $('input').value = body;
   });
 
   (async () => {
