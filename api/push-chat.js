@@ -1,30 +1,55 @@
-import webpush from 'web-push';
-import { createClient } from '@supabase/supabase-js';
+const REQUERIDAS = ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'WEBHOOK_SECRET'];
 
-webpush.setVapidDetails(
-  'https://vercel.com/', // "subject" genérico exigido por el estándar
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+let ctx = null;
 
-const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+// Todo se inicia aquí dentro para poder explicar qué falla en vez de caerse sin mensaje
+async function init() {
+  if (ctx) return ctx;
+  const webpush = (await import('web-push')).default;
+  const { createClient } = await import('@supabase/supabase-js');
+  webpush.setVapidDetails(
+    'https://vercel.com/', // "subject" genérico exigido por el estándar
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+  ctx = { webpush, db: createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY) };
+  return ctx;
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const faltan = REQUERIDAS.filter((k) => !process.env[k]);
+
+  // Abrir esta dirección en el navegador sirve de diagnóstico (no muestra ningún valor secreto)
+  if (req.method !== 'POST') {
+    let errorDeConfiguracion = null;
+    if (faltan.length === 0) {
+      try { await init(); } catch (e) { errorDeConfiguracion = e.message; }
+    }
+    return res.status(200).json({
+      mensaje: 'La función existe. Los avisos llegan por POST.',
+      variablesQueFaltan: faltan,
+      errorDeConfiguracion,
+    });
+  }
+
+  if (faltan.length) return res.status(500).json({ error: 'Faltan variables en Vercel', faltan });
 
   // Solo acepta avisos que vengan de tu base de datos (comparten este secreto)
-  if (!process.env.WEBHOOK_SECRET || req.headers['x-webhook-secret'] !== process.env.WEBHOOK_SECRET) {
+  if (req.headers['x-webhook-secret'] !== process.env.WEBHOOK_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  let c;
+  try { c = await init(); } catch (e) { return res.status(500).json({ error: 'Configuración inválida: ' + e.message }); }
 
   const { author, body, kind, user_id } = req.body || {};
   if (!body) return res.status(400).json({ error: 'Falta el mensaje' });
 
   // Todas las suscripciones, menos las de quien escribió el mensaje
-  let q = db.from('push_subscriptions').select('endpoint, p256dh, auth, user_id');
+  let q = c.db.from('push_subscriptions').select('endpoint, p256dh, auth, user_id');
   if (user_id) q = q.neq('user_id', user_id);
   const { data: subs, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: 'Supabase: ' + error.message });
 
   const texto = body.length > 140 ? body.slice(0, 137) + '…' : body;
   const payload = JSON.stringify({
@@ -34,7 +59,7 @@ export default async function handler(req, res) {
 
   const results = await Promise.allSettled(
     subs.map((s) =>
-      webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
+      c.webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
     )
   );
 
@@ -45,7 +70,7 @@ export default async function handler(req, res) {
       muertas.push(subs[i].endpoint);
     }
   });
-  if (muertas.length) await db.from('push_subscriptions').delete().in('endpoint', muertas);
+  if (muertas.length) await c.db.from('push_subscriptions').delete().in('endpoint', muertas);
 
   const fallidos = results.filter((r) => r.status === 'rejected').length;
   return res.status(200).json({ ok: true, enviados: results.length - fallidos, fallidos });
