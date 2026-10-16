@@ -1,0 +1,9 @@
+{
+  "name": "chat-amigos",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "web-push": "^3.6.7"
+  }
+}
