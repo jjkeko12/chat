@@ -32,7 +32,7 @@
   #menu h2 { font-size: .9rem; margin: 0; }
   #menu input { flex: none; width: 100%; font-size: .9rem; }
   #menu hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 4px 0; }
-  #menumsg, #pushmsg { font-size: .8rem; color: var(--muted); min-height: 1em; }
+  #menumsg, #pushmsg { font-size: .8rem; color: var(--muted); min-height: 1em; overflow-wrap: anywhere; }
   #msgs { background-size: cover; background-position: center; }
   .hasbg .meta, .hasbg .sys { background: var(--panel); padding: 1px 8px; border-radius: 8px; width: fit-content; }
   .hasbg .msg.mine .meta { margin-left: auto; }
@@ -49,8 +49,8 @@
     .onlyNarrow { display: block; }
   }
   .body.media { padding: 4px; }
-  .body.image img { display: block; max-width: min(320px, 70vw); max-height: 320px; width: auto; height: auto; border-radius: 10px; }
-  .body.sticker img { display: block; width: 112px; height: auto; }
+  .body.image img { display: block; max-width: min(440px, 75vw); max-height: 440px; width: auto; height: auto; border-radius: 10px; }
+  .body.sticker img { display: block; width: 160px; height: auto; }
   .body.media.sticker, .msg.mine .body.media.sticker { background: none; padding: 0; }
   #preview { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--line); }
   #preview img { max-height: 72px; max-width: 120px; border-radius: 8px; }
@@ -110,6 +110,7 @@
       <hr />
       <h2>Notificaciones</h2>
       <button id="pushBtn" type="button" class="sec">🔔 Activar notificaciones</button>
+      <button id="pushTest" type="button" class="sec" hidden>Probar notificación</button>
       <div id="pushmsg"></div>
       <hr />
       <button id="logout" class="sec" type="button">Salir</button>
@@ -299,6 +300,7 @@
   }
   async function refreshPushUi() {
     const btn = $('pushBtn'), msg = $('pushmsg');
+    $('pushTest').hidden = true;
     if (!pushOk) { btn.hidden = true; msg.textContent = 'Este navegador no admite notificaciones.'; return; }
     if (Notification.permission === 'denied') {
       btn.hidden = true;
@@ -311,6 +313,7 @@
     const on = Notification.permission === 'granted' && !!sub;
     btn.textContent = on ? '🔕 Desactivar notificaciones' : '🔔 Activar notificaciones';
     btn.dataset.on = on ? '1' : '';
+    $('pushTest').hidden = !on;
     msg.textContent = on ? 'Activadas en este dispositivo.' : '';
     if (on && me) savePush(sub); // vincula este dispositivo a la cuenta que está abierta
   }
@@ -455,6 +458,31 @@
   document.addEventListener('paste', (e) => {
     if ($('app').hidden || !e.clipboardData) return;
     if (handleFiles(e.clipboardData.files)) e.preventDefault();
+  });
+
+  $('pushTest').addEventListener('click', async () => {
+    const msg = $('pushmsg');
+    msg.textContent = 'Enviando prueba…';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      const { sub } = await getSub();
+      const k = sub && sub.options && sub.options.applicationServerKey;
+      const clave = k
+        ? btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        : '';
+      const r = await fetch('/api/push-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+        body: JSON.stringify({ clave })
+      });
+      const j = await r.json();
+      if (!r.ok) { msg.textContent = '⚠️ ' + (j.error || 'Error ' + r.status); return; }
+      const adv = (j.advertencias || []).map((a) => '⚠️ ' + a).join(' ');
+      if (!j.dispositivos) { msg.textContent = '⚠️ ' + j.aviso + ' ' + adv; return; }
+      msg.textContent = j.enviados + ' de ' + j.dispositivos + ' dispositivo(s) recibieron la prueba' +
+        (j.fallidos ? '. Fallos: ' + JSON.stringify(j.detalles) : '. Debería aparecer una notificación ahora.') +
+        (adv ? ' ' + adv : '');
+    } catch (e) { msg.textContent = 'Error: ' + e.message; }
   });
 
   function local(t) {
