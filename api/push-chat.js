@@ -44,18 +44,31 @@ export default async function handler(req, res) {
   try { c = await init(); } catch (e) { return res.status(500).json({ error: 'Configuración inválida: ' + e.message }); }
 
   const { author, body, kind, user_id } = req.body || {};
-  if (!body) return res.status(400).json({ error: 'Falta el mensaje' });
+  if (!body || !user_id) return res.status(400).json({ error: 'Faltan datos del mensaje' });
 
-  // Todas las suscripciones, menos las de quien escribió el mensaje
-  let q = c.db.from('push_subscriptions').select('endpoint, p256dh, auth, user_id');
-  if (user_id) q = q.neq('user_id', user_id);
+  // Busca a qué sala pertenece el mensaje, para avisar solo a quienes están en ella
+  const { data: msg } = await c.db.from('messages').select('room_id').eq('user_id', user_id).eq('body', body)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!msg) return res.status(200).json({ ok: true, enviados: 0, aviso: 'No encontré el mensaje' });
+  const { data: room } = await c.db.from('rooms').select('kind, name').eq('id', msg.room_id).single();
+  if (!room) return res.status(200).json({ ok: true, enviados: 0, aviso: 'No encontré la sala' });
+
+  let q = c.db.from('push_subscriptions').select('endpoint, p256dh, auth, user_id').neq('user_id', user_id);
+  if (room.kind !== 'general') {
+    const { data: ms } = await c.db.from('room_members').select('user_id').eq('room_id', msg.room_id);
+    const ids = (ms || []).map((m) => m.user_id);
+    if (!ids.length) return res.status(200).json({ ok: true, enviados: 0 });
+    q = q.in('user_id', ids);
+  }
   const { data: subs, error } = await q;
   if (error) return res.status(500).json({ error: 'Supabase: ' + error.message });
 
   const texto = body.length > 140 ? body.slice(0, 137) + '…' : body;
+  const cuerpo = kind === 'me' ? '* ' + author + ' ' + texto : room.kind === 'dm' ? texto : author + ': ' + texto;
   const payload = JSON.stringify({
-    title: '💬 Chat de amigos',
-    body: kind === 'me' ? '* ' + author + ' ' + texto : author + ': ' + texto,
+    title: room.kind === 'group' ? '👥 ' + room.name : room.kind === 'dm' ? '💬 ' + author : '💬 Chat de amigos',
+    body: cuerpo,
+    tag: msg.room_id,
   });
 
   const results = await Promise.allSettled(
