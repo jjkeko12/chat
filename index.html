@@ -62,6 +62,31 @@
   .stk img { width: 100%; height: 64px; object-fit: contain; cursor: pointer; display: block; }
   .stk button { position: absolute; top: -4px; right: -4px; padding: 0 5px; font-size: .7rem; border-radius: 50%; background: var(--other); color: var(--text); line-height: 1.4; }
   button.icon { padding: 10px 12px; }
+  #rooms { width: 210px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  #rooms h3, #memBox h3 { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 4px; }
+  button.room { width: 100%; text-align: left; background: none; color: var(--text); padding: 8px 10px; display: flex; justify-content: space-between; gap: 6px; }
+  button.room.active { background: var(--other); }
+  .badge { background: var(--mine); color: var(--mine-text); border-radius: 10px; padding: 0 7px; font-size: .75rem; }
+  #memBox ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #memBox li { display: flex; justify-content: space-between; align-items: center; gap: 6px; overflow: hidden; }
+  #memBox li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #memBox li button { padding: 0 8px; }
+  #memBox > button { margin-top: 12px; width: 100%; }
+  .link { cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+  #dlg { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .dlgbox { background: var(--panel); border-radius: 14px; padding: 16px; width: min(380px, 100%); max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .dlgbox h2 { margin: 0; font-size: 1.1rem; }
+  .pick { display: flex; flex-direction: column; gap: 6px; }
+  .pick label { display: flex; gap: 8px; align-items: center; }
+  .pick input[type=checkbox] { flex: none; width: auto; padding: 0; }
+  #dlgMsg { font-size: .85rem; color: #dc2626; min-height: 1em; }
+  textarea { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 1rem; line-height: 1.3; resize: none; max-height: 140px; overflow-y: auto; }
+  #form { align-items: flex-end; }
+  @media (max-width: 600px) {
+    #rooms { display: none; position: absolute; left: 0; top: 0; bottom: 0; z-index: 9; box-shadow: 4px 0 16px rgba(0,0,0,.3); }
+    #rooms.open { display: flex; }
+  }
   form { display: flex; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); }
   input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 1rem; }
   button { padding: 10px 18px; border: none; border-radius: 10px; background: var(--mine); color: var(--mine-text); font-size: 1rem; cursor: pointer; }
@@ -91,10 +116,16 @@
 </div>
 
 <div id="app" hidden style="display:flex;flex-direction:row;flex:1;min-height:0">
+  <aside id="rooms">
+    <strong>Chats</strong>
+    <div id="roomList"></div>
+    <button id="newGroup" type="button" class="sec">➕ Nuevo grupo</button>
+    <button id="newDm" type="button" class="sec">✉️ Chat privado</button>
+  </aside>
   <div id="chat">
   <header>
     <div>
-      <h1>💬 Chat de amigos</h1>
+      <h1 id="roomTitle">💬 Chat de amigos</h1>
       <div id="online"></div>
       <div id="status">Conectando…</div>
     </div>
@@ -106,6 +137,7 @@
       <input id="bgFile" type="file" accept="image/*" />
       <button id="bgClear" type="button" class="sec">Quitar fondo</button>
       <div id="menumsg"></div>
+      <button id="roomsBtn" type="button" class="sec onlyNarrow">Ver chats</button>
       <button id="memBtn" type="button" class="sec onlyNarrow">Ver miembros</button>
       <hr />
       <h2>Notificaciones</h2>
@@ -133,21 +165,32 @@
   <form id="form">
     <button id="stkBtn" type="button" class="icon sec" title="Stickers">😊</button>
     <button id="imgBtn" type="button" class="icon sec" title="Enviar una imagen">📎</button>
-    <input id="input" maxlength="500" placeholder="Escribe un mensaje…" autocomplete="off" />
+    <textarea id="input" rows="1" maxlength="500" placeholder="Escribe un mensaje…"></textarea>
     <button type="submit">Enviar</button>
   </form>
   <input id="imgFile" type="file" accept="image/*" hidden />
   <input id="stkFile" type="file" accept="image/*" multiple hidden />
   </div>
-  <aside id="members"><h3 id="memTitle">Miembros</h3><ul id="memberList"></ul></aside>
+  <aside id="members"><div id="memBox"></div></aside>
+</div>
+
+<div id="dlg" hidden>
+  <div class="dlgbox">
+    <h2 id="dlgTitle"></h2>
+    <div id="dlgBody"></div>
+    <div id="dlgMsg"></div>
+    <div class="row">
+      <button id="dlgOk" type="button">Aceptar</button>
+      <button id="dlgClose" type="button" class="sec">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-  // ---------- CONFIGURACIÓN: rellena estos 4 valores ----------
+  // ---------- CONFIGURACIÓN: rellena estos 3 valores ----------
   const SUPABASE_URL = 'https://rjyhgwijofiepieltrra.supabase.co/rest/v1/';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqeWhnd2lqb2ZpZXBpZWx0cnJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMTA3NzksImV4cCI6MjEwNzY4Njc3OX0.bfHO5ewx11znaeWtTm74Q2vQYopl2HqQsYQPSmYGeYM';
-  const ROOM = 'Amigos:D';
   const VAPID_PUBLIC_KEY = 'BKr56Yml-2jWpBf89cxHlGwlj2KlEMcpA5DC7Hp1P5npnQaMQr9ohVSJoag8QQsW2ezshCP7y8U0dCG84tz9Ngg'; // clave pública VAPID (la privada va solo en Vercel)
   // ------------------------------------------------------------
 
@@ -265,17 +308,200 @@
   });
   try { applyBg(localStorage.getItem('chat_bg') || ''); } catch (e) {}
 
-  async function loadMembers() {
-    const { data, error } = await db.from('profiles').select('name');
-    if (error || !data) return;
-    data.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
-    $('memberList').replaceChildren(...data.map((p) => {
-      const li = document.createElement('li');
-      li.textContent = p.name;
-      return li;
-    }));
-    $('memTitle').textContent = 'Miembros — ' + data.length;
+  // ----- Salas: General, grupos y chats privados -----
+  let rooms = [], roomMembers = [], profilesList = [], cur = null;
+  const unread = {};
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
+  let _t = null;
+  function loadMembers() { clearTimeout(_t); _t = setTimeout(loadAll, 250); }
+  function icon(r) { return r.kind === 'dm' ? '@ ' : r.kind === 'group' ? '# ' : '💬 '; }
+  function roomTitle(r) {
+    if (r.kind === 'general') return 'General';
+    if (r.kind === 'group') return r.name || 'Grupo';
+    const o = roomMembers.find((x) => x.room_id === r.id && x.user_id !== me.id);
+    const p = o && profilesList.find((q) => q.user_id === o.user_id);
+    return p ? p.name : 'Chat privado';
   }
+  function setTitle() { $('roomTitle').textContent = cur ? icon(cur) + roomTitle(cur) : '💬 Chat de amigos'; }
+
+  function updateOnline() {
+    if (!channel) return;
+    const allowed = cur && cur.kind !== 'general'
+      ? new Set(roomMembers.filter((x) => x.room_id === cur.id).map((x) => x.user_id)) : null;
+    const names = Object.entries(channel.presenceState())
+      .filter(([uid]) => !allowed || allowed.has(uid)).map(([, v]) => v[0].name);
+    $('online').textContent = 'En línea (' + names.length + '): ' + names.join(', ');
+  }
+
+  function renderRooms() {
+    const box = $('roomList');
+    box.replaceChildren();
+    [['', 'general'], ['Grupos', 'group'], ['Chats privados', 'dm']].forEach(([title, kind]) => {
+      const list = rooms.filter((r) => r.kind === kind);
+      if (!list.length) return;
+      if (title) { const h = document.createElement('h3'); h.textContent = title; box.append(h); }
+      list.sort((a, b) => roomTitle(a).localeCompare(roomTitle(b), 'es', { sensitivity: 'base' })).forEach((r) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'room' + (cur && cur.id === r.id ? ' active' : '');
+        const n = document.createElement('span');
+        n.textContent = icon(r) + roomTitle(r);
+        b.append(n);
+        if (unread[r.id]) { const u = document.createElement('span'); u.className = 'badge'; u.textContent = unread[r.id]; b.append(u); }
+        b.onclick = () => openRoom(r.id);
+        box.append(b);
+      });
+    });
+  }
+
+  function renderMembers() {
+    const box = $('memBox');
+    box.replaceChildren();
+    if (!cur) return;
+    const ids = new Set(roomMembers.filter((x) => x.room_id === cur.id).map((x) => x.user_id));
+    const inside = cur.kind === 'general' ? profilesList : profilesList.filter((p) => ids.has(p.user_id));
+    const outside = cur.kind === 'group' ? profilesList.filter((p) => !ids.has(p.user_id)) : [];
+    const section = (title, people, canAdd) => {
+      const h = document.createElement('h3');
+      h.textContent = title + ' — ' + people.length;
+      const ul = document.createElement('ul');
+      people.slice().sort(byName).forEach((p) => {
+        const li = document.createElement('li');
+        const s = document.createElement('span');
+        const owner = roomMembers.some((x) => x.room_id === cur.id && x.user_id === p.user_id && x.role === 'owner');
+        s.textContent = p.name + (owner ? ' 👑' : '');
+        if (!canAdd && p.user_id !== me.id) { s.className = 'link'; s.title = 'Abrir chat privado'; s.onclick = () => openDm(p.name); }
+        li.append(s);
+        if (canAdd) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.textContent = '＋'; b.title = 'Agregar al grupo';
+          b.onclick = async () => {
+            const { error } = await db.rpc('agregar_a_grupo', { p_room: cur.id, p_nombre: p.name });
+            if (error) local('⚠️ ' + error.message);
+          };
+          li.append(b);
+        }
+        ul.append(li);
+      });
+      box.append(h, ul);
+    };
+    section(cur.kind === 'general' ? 'Todos' : 'En este chat', inside, false);
+    if (cur.kind === 'group') {
+      section('No están en este chat', outside, true);
+      const leave = document.createElement('button');
+      leave.type = 'button'; leave.className = 'sec'; leave.textContent = 'Salir del grupo';
+      leave.onclick = async () => {
+        if (!confirm('¿Salir de «' + cur.name + '»?')) return;
+        const { error } = await db.rpc('salir_del_grupo', { p_room: cur.id });
+        if (error) local('⚠️ ' + error.message);
+      };
+      box.append(leave);
+    }
+  }
+
+  async function loadAll() {
+    if (!me) return;
+    const [r, m, p] = await Promise.all([
+      db.from('rooms').select('id,kind,name'),
+      db.from('room_members').select('room_id,user_id,role'),
+      db.from('profiles').select('user_id,name'),
+    ]);
+    const err = r.error || m.error || p.error;
+    if (err) { $('status').textContent = 'Error: ' + err.message; return; }
+    rooms = r.data; roomMembers = m.data; profilesList = p.data;
+    if (cur && !rooms.some((x) => x.id === cur.id)) {
+      cur = null;
+      const g = rooms.find((x) => x.kind === 'general');
+      if (g) { await openRoom(g.id); local('Ya no tienes acceso a ese chat.'); }
+      return;
+    }
+    if (cur) cur = rooms.find((x) => x.id === cur.id);
+    setTitle(); renderRooms(); renderMembers(); updateOnline();
+  }
+
+  async function openRoom(id) {
+    const r = rooms.find((x) => x.id === id);
+    if (!r) return;
+    cur = r; unread[id] = 0;
+    $('msgs').replaceChildren(); seen.clear(); els.clear();
+    $('rooms').classList.remove('open'); $('members').classList.remove('open');
+    setTitle(); renderRooms(); renderMembers(); updateOnline();
+    const { data, error } = await db.from('messages').select('*').eq('room_id', id)
+      .order('created_at', { ascending: false }).limit(100);
+    if (!cur || cur.id !== id) return; // cambiaste de chat mientras cargaba
+    if (error) { $('status').textContent = 'Error: ' + error.message; return; }
+    data.reverse().forEach(add);
+  }
+
+  function onMessage(m) {
+    if (cur && m.room_id === cur.id) return add(m);
+    if (m.user_id !== me.id && m.kind !== 'system') unread[m.room_id] = (unread[m.room_id] || 0) + 1;
+    if (rooms.some((x) => x.id === m.room_id)) renderRooms(); else loadMembers();
+  }
+
+  async function openDm(name) {
+    const { data, error } = await db.rpc('abrir_chat_privado', { p_nombre: name });
+    if (error) return local('⚠️ ' + error.message);
+    await loadAll();
+    await openRoom(data);
+  }
+
+  function dialog(title, bodyNode, okText, onOk) {
+    $('dlgTitle').textContent = title;
+    $('dlgBody').replaceChildren(bodyNode);
+    $('dlgMsg').textContent = '';
+    $('dlgOk').hidden = !onOk;
+    $('dlgOk').textContent = okText || '';
+    $('dlgOk').onclick = onOk;
+    $('dlg').hidden = false;
+  }
+  $('dlgClose').addEventListener('click', () => { $('dlg').hidden = true; });
+  const others = () => profilesList.filter((p) => p.user_id !== me.id).sort(byName);
+
+  $('newGroup').addEventListener('click', () => {
+    const box = document.createElement('div');
+    box.className = 'pick';
+    const nm = document.createElement('input');
+    nm.placeholder = 'Nombre del grupo'; nm.maxLength = 40;
+    box.append(nm);
+    others().forEach((p) => {
+      const l = document.createElement('label');
+      const c = document.createElement('input');
+      c.type = 'checkbox'; c.value = p.name;
+      l.append(c, p.name);
+      box.append(l);
+    });
+    dialog('Nuevo grupo', box, 'Crear', async () => {
+      const names = [...box.querySelectorAll('input:checked')].map((c) => c.value);
+      const { data, error } = await db.rpc('crear_grupo', { p_nombre: nm.value, p_miembros: names });
+      if (error) { $('dlgMsg').textContent = error.message; return; }
+      $('dlg').hidden = true;
+      await loadAll();
+      await openRoom(data);
+    });
+  });
+  $('newDm').addEventListener('click', () => {
+    const box = document.createElement('div');
+    box.className = 'pick';
+    others().forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'sec'; b.textContent = p.name;
+      b.onclick = () => { $('dlg').hidden = true; openDm(p.name); };
+      box.append(b);
+    });
+    dialog('Chat privado con…', box, null, null);
+  });
+
+  // Caja de texto: crece al escribir y los renglones se acomodan hacia abajo (Enter envía, Shift+Enter salto de línea)
+  const ta = $('input');
+  function fit() { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; }
+  ta.addEventListener('input', fit);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('form').requestSubmit(); }
+  });
+  $('roomsBtn').addEventListener('click', () => { $('rooms').classList.toggle('open'); $('menu').hidden = true; });
+  $('chat').addEventListener('click', () => $('rooms').classList.remove('open'));
+
   $('memBtn').addEventListener('click', () => { $('members').classList.toggle('open'); $('menu').hidden = true; });
   $('chat').addEventListener('click', () => $('members').classList.remove('open'));
 
@@ -473,7 +699,7 @@
       const r = await fetch('/api/push-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-        body: JSON.stringify({ clave })
+        body: JSON.stringify({ clave, enPagina: VAPID_PUBLIC_KEY })
       });
       const j = await r.json();
       if (!r.ok) { msg.textContent = '⚠️ ' + (j.error || 'Error ' + r.status); return; }
@@ -535,10 +761,11 @@
     $('msgs').scrollTop = $('msgs').scrollHeight;
   }
 
-  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/me <acción> – mensaje de acción\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/nick <nuevo> – cambia tu nombre\n/nick <actual> > <nuevo> – cambia el nombre de otra persona\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita\n/pban <nombre> – borra la cuenta de esa persona (permanente)';
+  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/me <acción> – mensaje de acción\n/dm <nombre> – abre un chat privado\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/nick <nuevo> – cambia tu nombre\n/nick <actual> > <nuevo> – cambia el nombre de otra persona\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita\n/pban <nombre> – borra la cuenta de esa persona (permanente)';
 
   async function send(body, kind) {
-    const row = { room: ROOM, author: myName, body };
+    if (!cur) return false;
+    const row = { room_id: cur.id, author: myName, body };
     if (kind) row.kind = kind;
     const { data, error } = await db.from('messages').insert(row).select().single();
     if (error) {
@@ -551,7 +778,7 @@
       } else local('⚠️ No se pudo enviar: ' + error.message);
       return false;
     }
-    add(data);
+    if (cur && data.room_id === cur.id) add(data);
     return true;
   }
 
@@ -579,10 +806,14 @@
       const self = actual.toLowerCase() === myName.toLowerCase();
       const old = myName;
       if (self) myName = nuevo.slice(0, 30);
-      const n = await rpc('cmd_nick', { p_actual: actual, p_nuevo: nuevo, p_room: ROOM });
+      const n = await rpc('cmd_nick', { p_actual: actual, p_nuevo: nuevo, p_room: cur.id });
       if (n && self && channel) channel.track({ name: myName });
       else if (!n && self) myName = old;
       return;
+    }
+    if (cmd === 'dm') {
+      if (!arg) return local('Uso: /dm <nombre>');
+      return openDm(arg);
     }
     if (cmd === 'me') {
       if (!arg) return local('Uso: /me <acción>');
@@ -595,28 +826,28 @@
       if (p.length > 1 && /^\d+$/.test(p[p.length - 1])) mins = parseInt(p.pop(), 10);
       const name = p.join(' ').trim();
       if (!name) return local('Uso: /mute <nombre> [minutos]');
-      await rpc('cmd_mute', { p_nombre: name, p_minutos: mins, p_room: ROOM });
+      await rpc('cmd_mute', { p_nombre: name, p_minutos: mins, p_room: cur.id });
       return;
     }
     if (cmd === 'unmute') {
       if (!arg) return local('Uso: /unmute <nombre>');
-      await rpc('cmd_unmute', { p_nombre: arg, p_room: ROOM });
+      await rpc('cmd_unmute', { p_nombre: arg, p_room: cur.id });
       return;
     }
     if (cmd === 'delete') {
       const n = parseInt(arg, 10);
       if (!/^\d+$/.test(arg) || n < 1 || n > 100) return local('Uso: /delete <número de 1 a 100>');
-      await rpc('cmd_delete', { p_n: n, p_room: ROOM });
+      await rpc('cmd_delete', { p_n: n, p_room: cur.id });
       return;
     }
     if (cmd === 'pban') {
       if (!arg) return local('Uso: /pban <nombre>');
-      await rpc('cmd_pban', { p_nombre: arg, p_room: ROOM });
+      await rpc('cmd_pban', { p_nombre: arg, p_room: cur.id });
       return;
     }
     if (cmd === 'admin' || cmd === 'unadmin') {
       if (!arg) return local('Uso: /' + cmd + ' <nombre>');
-      await rpc('cmd_admin', { p_nombre: arg, p_dar: cmd === 'admin', p_room: ROOM });
+      await rpc('cmd_admin', { p_nombre: arg, p_dar: cmd === 'admin', p_room: cur.id });
       return;
     }
     local('Comando desconocido. Escribe /help para ver la lista.');
@@ -629,11 +860,11 @@
     $('auth').hidden = true;
     $('app').hidden = false;
 
-    channel = db.channel('sala:' + ROOM, { config: { presence: { key: me.id } } });
+    channel = db.channel('app', { config: { presence: { key: me.id } } });
     channel
-      .on('postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + ROOM },
-          (p) => add(p.new))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (p) => onMessage(p.new))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => loadMembers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, () => loadMembers())
       .on('postgres_changes',
           { event: 'DELETE', schema: 'public', table: 'messages' },
           (p) => { const el = els.get(p.old.id); if (el) { el.remove(); els.delete(p.old.id); } })
@@ -647,22 +878,17 @@
             }
           })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadMembers())
-      .on('presence', { event: 'sync' }, () => {
-        const names = Object.values(channel.presenceState()).map((v) => v[0].name);
-        $('online').textContent = 'En línea (' + names.length + '): ' + names.join(', ');
-      })
+      .on('presence', { event: 'sync' }, () => updateOnline())
       .subscribe(async (s) => {
         if (s === 'SUBSCRIBED') { $('status').textContent = ''; await channel.track({ name: myName }); }
         else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') { $('status').textContent = 'Reconectando…'; }
       });
 
-    loadMembers();
     loadStickers();
     refreshPushUi();
-    const { data, error } = await db.from('messages').select('*')
-      .eq('room', ROOM).order('created_at', { ascending: false }).limit(100);
-    if (error) { $('status').textContent = 'Error: ' + error.message; return; }
-    data.reverse().forEach(add);
+    await loadAll();
+    const g = rooms.find((x) => x.kind === 'general');
+    if (g) await openRoom(g.id); else $('status').textContent = 'Falta la sala General: ejecuta salas.sql en Supabase.';
     local('Escribe /help para ver los comandos.');
   }
 
@@ -670,9 +896,9 @@
     e.preventDefault();
     const body = $('input').value.trim();
     if (!body) return;
-    $('input').value = '';
+    $('input').value = ''; fit();
     if (body.startsWith('/')) return runCommand(body);
-    if (!(await send(body))) $('input').value = body;
+    if (!(await send(body))) { $('input').value = body; fit(); }
   });
 
   (async () => {
