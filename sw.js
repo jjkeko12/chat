@@ -6,7 +6,7 @@ self.addEventListener('push', (event) => {
     if (!data.test && wins.some((w) => w.visibilityState === 'visible' && w.focused)) return;
     await self.registration.showNotification(data.title || '💬 Chat de amigos', {
       body: data.body || '',
-      tag: 'chat-amigos',
+      tag: data.tag || 'chat-amigos',
       renotify: true,
     });
   })());
