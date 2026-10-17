@@ -74,5 +74,12 @@ export default async function handler(req, res) {
   if (muertas.length) await c.db.from('push_subscriptions').delete().in('endpoint', muertas);
 
   const fallidos = results.filter((r) => r.status === 'rejected').length;
-  return res.status(200).json({ ok: true, enviados: results.length - fallidos, fallidos });
+  // Motivo de cada fallo (aparece en net._http_response)
+  const detalles = results
+    .filter((r) => r.status === 'rejected')
+    .map((r) => ({
+      statusCode: r.reason && r.reason.statusCode,
+      mensaje: String((r.reason && (r.reason.body || r.reason.message)) || '').slice(0, 100),
+    }));
+  return res.status(200).json({ ok: true, enviados: results.length - fallidos, fallidos, detalles });
 }
