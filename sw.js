@@ -3,7 +3,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     // Si el chat está abierto y a la vista, no hace falta avisar
-    if (wins.some((w) => w.visibilityState === 'visible' && w.focused)) return;
+    if (!data.test && wins.some((w) => w.visibilityState === 'visible' && w.focused)) return;
     await self.registration.showNotification(data.title || '💬 Chat de amigos', {
       body: data.body || '',
       tag: 'chat-amigos',
