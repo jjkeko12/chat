@@ -145,6 +145,7 @@
       <button id="pushTest" type="button" class="sec" hidden>Probar notificación</button>
       <div id="pushmsg"></div>
       <hr />
+      <button id="passBtn" type="button" class="sec">🔑 Cambiar mi contraseña</button>
       <button id="logout" class="sec" type="button">Salir</button>
     </div>
   </header>
@@ -499,6 +500,19 @@
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('form').requestSubmit(); }
   });
+  $('passBtn').addEventListener('click', () => {
+    $('menu').hidden = true;
+    const i = document.createElement('input');
+    i.type = 'password'; i.placeholder = 'Contraseña nueva (mín. 6 caracteres)';
+    i.autocomplete = 'new-password'; i.style.width = '100%';
+    dialog('Cambiar mi contraseña', i, 'Guardar', async () => {
+      if (i.value.length < 6) { $('dlgMsg').textContent = 'Debe tener al menos 6 caracteres.'; return; }
+      const { error } = await db.auth.updateUser({ password: i.value });
+      if (error) { $('dlgMsg').textContent = error.message; return; }
+      $('dlg').hidden = true;
+      local('🔑 Contraseña cambiada.');
+    });
+  });
   $('roomsBtn').addEventListener('click', () => { $('rooms').classList.toggle('open'); $('menu').hidden = true; });
   $('chat').addEventListener('click', () => $('rooms').classList.remove('open'));
 
@@ -761,7 +775,7 @@
     $('msgs').scrollTop = $('msgs').scrollHeight;
   }
 
-  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/me <acción> – mensaje de acción\n/dm <nombre> – abre un chat privado\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/nick <nuevo> – cambia tu nombre\n/nick <actual> > <nuevo> – cambia el nombre de otra persona\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita\n/pban <nombre> – borra la cuenta de esa persona (permanente)';
+  const AYUDA = 'Comandos:\n/help – muestra esta ayuda\n/me <acción> – mensaje de acción\n/dm <nombre> – abre un chat privado\n/clear – limpia tu pantalla (no borra nada)\n\nSolo administradores:\n/nick <nuevo> – cambia tu nombre\n/nick <actual> > <nuevo> – cambia el nombre de otra persona\n/mute <nombre> [minutos] – silencia (10 min por defecto)\n/unmute <nombre> – quita el silencio\n/delete <1-100> – borra los últimos N mensajes\n/admin <nombre> – da permisos de administrador\n/unadmin <nombre> – los quita\n/pban <nombre> – borra la cuenta de esa persona (permanente)\n/resetpass <nombre> <clave> – da una contraseña temporal nueva a quien la olvidó';
 
   async function send(body, kind) {
     if (!cur) return false;
@@ -838,6 +852,16 @@
       const n = parseInt(arg, 10);
       if (!/^\d+$/.test(arg) || n < 1 || n > 100) return local('Uso: /delete <número de 1 a 100>');
       await rpc('cmd_delete', { p_n: n, p_room: cur.id });
+      return;
+    }
+    if (cmd === 'resetpass') {
+      const i = arg.lastIndexOf(' ');
+      const name = i > 0 ? arg.slice(0, i).trim() : '';
+      const clave = i > 0 ? arg.slice(i + 1) : '';
+      if (!name || !clave) return local('Uso: /resetpass <nombre> <contraseña nueva>');
+      const { error } = await db.rpc('cmd_resetpass', { p_nombre: name, p_clave: clave, p_room: cur.id });
+      if (error) local('⚠️ ' + error.message);
+      else local('🔑 Listo. Dile a ' + name + ' su contraseña temporal por privado y que la cambie desde el menú.');
       return;
     }
     if (cmd === 'pban') {
