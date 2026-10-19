@@ -160,7 +160,8 @@
       <strong>Mis stickers</strong>
       <button id="stkAdd" type="button" class="sec">➕ Agregar</button>
     </div>
-    <div class="hint">Con este panel abierto puedes arrastrar o pegar (Ctrl+V) una imagen para guardarla como sticker.</div>
+    <div class="hint">Con este panel abierto puedes arrastrar o pegar una imagen (o un GIF) para guardarla como sticker. Para GIFs de Tenor o GIPHY: clic derecho sobre el GIF, «Copiar dirección de la imagen» y pégala aquí abajo.</div>
+    <div class="row" style="margin-bottom:8px"><input id="stkUrl" placeholder="Enlace de un GIF…" /><button id="stkUrlBtn" type="button" class="sec" style="flex:none">Agregar</button></div>
     <div id="stkGrid"></div>
   </div>
   <form id="form">
@@ -578,6 +579,10 @@
 
   // ----- Imágenes y stickers (cosas distintas: las imágenes son grandes, los stickers pequeños) -----
   const MEDIA_BASE = new URL(SUPABASE_URL).origin + '/storage/v1/object/public/chat-media/';
+  const GIF_HOSTS = /^https:\/\/(media[0-9]*\.tenor\.com|c\.tenor\.com|media[0-9]*\.giphy\.com|i\.giphy\.com)\//i;
+  const GIF_EXT = /\.(gif|webp|png|jpe?g)(\?.*)?$/i;
+  const okMedia = (u, kind) => typeof u === 'string' &&
+    (u.startsWith(MEDIA_BASE) || (kind !== 'image' && GIF_HOSTS.test(u) && GIF_EXT.test(u)));
   let pendingImg = null, pendingUrl = '', stickers = [];
 
   function isImg(f) { return !!(f && f.type && f.type.startsWith('image/')); }
@@ -603,7 +608,7 @@
   }
 
   async function uploadMedia(blob) {
-    const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg';
+    const ext = blob.type === 'image/gif' ? 'gif' : blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg';
     const path = me.id + '/' + crypto.randomUUID() + '.' + ext;
     const { error } = await db.storage.from('chat-media')
       .upload(path, blob, { contentType: blob.type, cacheControl: '31536000' });
@@ -641,11 +646,12 @@
   async function loadStickers() {
     const { data, error } = await db.from('stickers').select('id,url').order('created_at', { ascending: false });
     if (error) return;
-    stickers = data.filter((s) => s.url.startsWith(MEDIA_BASE));
+    stickers = data.filter((s) => okMedia(s.url, 'sticker'));
     $('stkGrid').replaceChildren(...stickers.map((s) => {
       const d = document.createElement('div');
       d.className = 'stk';
       const im = document.createElement('img');
+      im.referrerPolicy = 'no-referrer'; im.loading = 'lazy';
       im.src = s.url; im.alt = 'sticker';
       im.addEventListener('click', async () => { $('stickerPanel').hidden = true; await send(s.url, 'sticker'); });
       const x = document.createElement('button');
@@ -660,9 +666,13 @@
     }));
   }
   async function addSticker(file) {
-    if (stickers.length >= 60) return local('⚠️ Ya tienes 60 stickers; quita alguno para agregar más.');
+    if (stickers.length >= 500) return local('⚠️ Ya tienes 500 stickers; quita alguno para agregar más.');
     try {
-      const blob = await processImage(file, 256, 'image/webp', 0.9, false);
+      let blob;
+      if (file.type === 'image/gif') {
+        if (file.size > 2 * 1024 * 1024) return local('⚠️ Ese GIF pesa más de 2 MB. Busca uno más ligero o pega su enlace.');
+        blob = file; // se guarda tal cual para que siga animado
+      } else blob = await processImage(file, 256, 'image/webp', 0.9, false);
       const url = await uploadMedia(blob);
       const { error } = await db.from('stickers').insert({ url });
       if (error) throw error;
@@ -670,6 +680,17 @@
     } catch (e) { local('⚠️ No se pudo guardar el sticker: ' + (e.message || e)); }
   }
 
+  async function addStickerUrl(raw) {
+    const u = (raw || '').trim();
+    if (!GIF_HOSTS.test(u) || !GIF_EXT.test(u)) {
+      return local('⚠️ Ese enlace no sirve. En Tenor o GIPHY haz clic derecho sobre el GIF, elige «Copiar dirección de la imagen» y pégala (debe empezar con media.tenor.com o giphy.com y terminar en .gif).');
+    }
+    if (stickers.length >= 500) return local('⚠️ Ya tienes 500 stickers; quita alguno para agregar más.');
+    const { error } = await db.from('stickers').insert({ url: u });
+    if (error) return local('⚠️ No se pudo guardar el sticker: ' + error.message);
+    loadStickers();
+  }
+  $('stkUrlBtn').addEventListener('click', async () => { await addStickerUrl($('stkUrl').value); $('stkUrl').value = ''; });
   $('imgBtn').addEventListener('click', () => $('imgFile').click());
   $('imgFile').addEventListener('change', () => {
     const f = $('imgFile').files[0]; $('imgFile').value = '';
@@ -690,14 +711,22 @@
     return true;
   }
   $('chat').addEventListener('dragover', (e) => {
-    if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault();
+    const ty = e.dataTransfer ? [...e.dataTransfer.types] : [];
+    if (ty.includes('Files') || (ty.includes('text/uri-list') && !$('stickerPanel').hidden)) e.preventDefault();
   });
   $('chat').addEventListener('drop', (e) => {
-    if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); handleFiles(e.dataTransfer.files); }
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.files.length) { e.preventDefault(); handleFiles(dt.files); return; }
+    const u = (dt.getData('text/uri-list') || dt.getData('text/plain') || '').split('\n')[0].trim();
+    if (!$('stickerPanel').hidden && /^https:\/\//i.test(u)) { e.preventDefault(); addStickerUrl(u); }
   });
   document.addEventListener('paste', (e) => {
     if ($('app').hidden || !e.clipboardData) return;
-    if (handleFiles(e.clipboardData.files)) e.preventDefault();
+    if (handleFiles(e.clipboardData.files)) { e.preventDefault(); return; }
+    const t = (e.clipboardData.getData('text') || '').trim();
+    const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
+    if (!typing && !$('stickerPanel').hidden && GIF_HOSTS.test(t)) { e.preventDefault(); addStickerUrl(t); }
   });
 
   $('pushTest').addEventListener('click', async () => {
@@ -758,10 +787,11 @@
       body.className = 'body';
       if (m.kind === 'image' || m.kind === 'sticker') {
         body.classList.add('media', m.kind);
-        if (typeof m.body === 'string' && m.body.startsWith(MEDIA_BASE)) {
+        if (okMedia(m.body, m.kind)) {
           const a = document.createElement('a');
           a.href = m.body; a.target = '_blank'; a.rel = 'noopener';
           const im = document.createElement('img');
+          im.referrerPolicy = 'no-referrer';
           im.src = m.body; im.alt = m.kind === 'sticker' ? 'sticker' : 'imagen';
           im.addEventListener('load', () => { $('msgs').scrollTop = $('msgs').scrollHeight; });
           a.append(im);
